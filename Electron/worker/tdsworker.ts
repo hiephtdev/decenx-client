@@ -1,17 +1,15 @@
 import HumanBrowser from '../Utils/HumanBrowser';
-import { Tiktok } from "../types/client.type";
 import { useTdsService } from '../services/tdsServices';
 import { BrowserWindow } from 'electron';
 import * as path from "path";
-
-interface IWorker {
-    start(type: "tiktok_like" | "tiktok_follow", tsdid: string, tiktok: Tiktok): Promise<void>;
-    stop(): void;
-}
+import { IWorker } from '../types/worker.type';
+import Logger from '../Utils/logger';
+import { IClientBrowser } from '../types/clientbrowser.type';
 
 interface TdsWorkerArgs {
     browserArgs?: string[];
-    maincontent?: BrowserWindow;
+    maincontent: BrowserWindow;
+    profileName: string;
 }
 
 export class TdsWorker implements IWorker {
@@ -19,22 +17,23 @@ export class TdsWorker implements IWorker {
     private browserArgs: string[];
     private cancel: boolean = false;
     private locked: boolean = false;
+    private profileName: string;
 
     private defaultPauseOptions = {
-        maxPause: 3,
-        minPause: 1,
+        maxPause: 2,
+        minPause: 0,
         hesitationBeforeClick: true,
     };
 
     private jitterDefault = {
-        jitterMin: 5,
+        jitterMin: 3,
         jitterMax: 30,
-        jitterCount: 5,
+        jitterCount: 3,
         debug: false,
     };
 
     private browser: HumanBrowser;
-    private maincontent: BrowserWindow | undefined;
+    private maincontent: BrowserWindow;
 
     constructor(args: TdsWorkerArgs) {
         this.browser = new HumanBrowser();
@@ -43,6 +42,7 @@ export class TdsWorker implements IWorker {
             this.browserArgs = [...this.browserArgs, ...args.browserArgs];
         }
         this.maincontent = args.maincontent;
+        this.profileName = args.profileName;
     }
 
     // Hàm thực hiện hành động di chuyển và jitter
@@ -52,11 +52,11 @@ export class TdsWorker implements IWorker {
     }
 
     // Hàm cập nhật cookie
-    private async updateCookie(tiktok: Tiktok) {
-        if (tiktok.sid) {
+    private async updateCookie(sid: string) {
+        if (sid) {
             await this.browser.page?.setCookie({
                 name: 'sessionid',
-                value: tiktok.sid,
+                value: sid,
                 domain: '.tiktok.com',
                 path: '/',
                 secure: true,
@@ -74,55 +74,98 @@ export class TdsWorker implements IWorker {
     }
 
     // Hàm thực hiện công việc chính
-    private async performWork(type: "tiktok_like" | "tiktok_follow", tsdid: string, tiktok: Tiktok) {
-        const { getTiktokTasks } = useTdsService(tiktok.sid);
+    private async performWork(clientbrowser: IClientBrowser) {
+        const { getTiktokTasks, confirmAndSendQuest } = useTdsService(clientbrowser.tdsid);
+        let numTasks = 0;
         while (!this.cancel) {
-            const tiktokTasks = await getTiktokTasks(type);
-
+            const tiktokTasks = await getTiktokTasks(clientbrowser.action);
+            this.sendLogs(`[Worker] Đang lấy nhiệm vụ ${clientbrowser.action} từ server: ${tiktokTasks.length} nhiệm vụ`, clientbrowser.profileName);
             if (!tiktokTasks || tiktokTasks.length === 0) {
                 return;
             }
+            let i = tiktokTasks.length;
+            while (i--) {
+                try {
 
-            for (let i = tiktokTasks.length - 1; i >= 0; i--) {
-                const task = tiktokTasks[i];
-                await this.performTiktokTask(type, task);
+                    if (this.cancel) {
+                        return;
+                    }
+                    if (numTasks >= 8) {
+                        numTasks = 0;
+
+                    } else {
+                        numTasks++;
+                    }
+                    this.sendLogs(`[Worker] Đang thực hiện nhiệm vụ ${clientbrowser.action} thứ ${i + 1} / ${tiktokTasks.length}`, clientbrowser.profileName);
+                    const task = tiktokTasks[i];
+                    await this.performTiktokTask(clientbrowser.action, task);
+                    this.sendLogs(`[Worker] Hoàn thành nhiệm vụ ${clientbrowser.action} thứ ${i + 1} / ${tiktokTasks.length}`, clientbrowser.profileName);
+
+                    const result = await confirmAndSendQuest(clientbrowser.action, task.id);
+                    if (result.success) {
+                        this.sendLogs(`[Worker] Gửi duyệt nhiệm vụ thành công`, clientbrowser.profileName);
+                        if (result.message) {
+                            this.sendLogs(`[Worker] ${result.message}`, clientbrowser.profileName);
+                        }
+                    } else {
+                        this.sendLogs(`[Worker] Gửi duyệt nhiệm vụ thất bại`, clientbrowser.profileName);
+                    }
+                } catch (error) {
+                    this.sendLogs(`[Worker] Lỗi: ${error}`, clientbrowser.profileName);
+                }
             }
         }
     }
 
-    // Hàm bắt đầu worker
-    async start(type: "tiktok_like" | "tiktok_follow", tsdid: string, tiktok: Tiktok): Promise<void> {
-        this.locked = true;
+    /**
+     * Gửi thông tin logs tới cửa sổ chính
+     * @param logs 
+     */
+    sendLogs(logs: string, username: string) {
+        // console.log(logs);
+        Logger.info(logs);
+        this.maincontent.webContents.send('worker-logs', logs, username);
+    }
 
-        if (!tsdid || !tiktok || !tiktok.username || tiktok.sid) {
+    // Hàm bắt đầu worker
+    async start(clientbrowser: IClientBrowser, browserDisconnectCallback: () => void): Promise<void> {
+        this.locked = true;
+        this.sendLogs(`[Worker] Bắt đầu worker ${clientbrowser.action} cho tài khoản ${clientbrowser.profileName}`, clientbrowser.profileName);
+        if (!clientbrowser.tdsid || !clientbrowser.profileName || !clientbrowser.sid) {
             return;
         }
 
         try {
             await this.browser.launch({
                 headless: this.headMode,
-                userDataDir: path.join(__dirname, '/user-data-dir/', tiktok.username),
+                userDataDir: path.join(__dirname, '/user-data-dir/', clientbrowser.profileName),
                 args: this.browserArgs
+            }, () => {
+                this.sendLogs(`[Worker] Browser disconnected`, clientbrowser.profileName);
+                this.stop();
+                browserDisconnectCallback();
             });
-
-            await this.updateCookie(tiktok);
-
-            await this.performWork(type, tsdid, tiktok);
-        } catch (error) {
+            this.sendLogs(`[Worker] Khởi động trình duyệt thành công`, clientbrowser.profileName);
+            await this.updateCookie(clientbrowser.sid);
+            this.sendLogs(`[Worker] Cập nhật cookie thành công`, clientbrowser.profileName);
+            await this.performWork(clientbrowser);
+        } catch (error: any) {
             // Log error
+            this.sendLogs(`[Worker] Lỗi: ${error}`, clientbrowser.profileName);
         } finally {
             this.locked = false;
+            this.sendLogs(`[Worker] Kết thúc worker ${clientbrowser.action} cho tài khoản ${clientbrowser.profileName}`, clientbrowser.profileName);
         }
     }
 
     // Hàm dừng worker
     async stop() {
         this.cancel = true;
-
+        this.sendLogs(`[Worker] Nhận lệnh dừng worker`, this.profileName);
         const turnoffInterval = setInterval(() => {
             if (!this.locked) {
                 clearInterval(turnoffInterval);
-
+                this.sendLogs(`[Worker] Dừng worker`, this.profileName);
                 if (this.browser) {
                     this.browser.close();
                 }

@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, onBeforeUnmount } from 'vue'
+import { computed, onMounted, ref, onBeforeUnmount, reactive } from 'vue'
 import axios from 'axios';
 import { API_URL } from '../constants/config';
 import { useSocket } from '../composables/useSocket';
 import { useMessage } from '../composables/useMessage';
-import { decode } from 'jsonwebtoken';
+import { JwtPayload, decode } from 'jsonwebtoken';
 
 const socketServer = useSocket();
 const { showMessage } = useMessage();
 //Token
 const accessToken = ref(localStorage.getItem('token') || "");
-const userId = decode(accessToken.value)?.userId || "";
+const userId = (decode(accessToken.value) as JwtPayload)?.userId || "";
 
 //Trạng thái socket
 const socketConnected = ref(false);
@@ -26,22 +26,33 @@ onBeforeUnmount(() => {
   //Connect websocket
   socketServer.on('connect', () => {
     socketConnected.value = true;
+    // connectClient();
     showMessage('Connected to the server', "success");
   });
 
 // Nghe sự kiện lỗi kết nối
 socketServer.on('connect_error', (error: any) => {
-  socketConnected.value = false;
-  connectLoading.value = false;
-  showMessage(`Connection error: ${error}`, "error");
+  try {
+    socketConnected.value = false;
+    connectLoading.value = false;
+    socketServer.emit('unsubscribe', uuid.value);
+    showMessage(`Connection error: ${error}`, "error");
+  } catch (ex) {
+    showMessage(`Connection error: ${ex}`, "error");
+  }
   // Xử lý lỗi kết nối ở đây
 });
 
 // Lắng nghe sự kiện disconnect
 socketServer.on('disconnect', () => {
-  socketConnected.value = false;
-  connectLoading.value = false;
-  showMessage(`Disconnected from the server`, "error");
+  try {
+    socketConnected.value = false;
+    connectLoading.value = false;
+    socketServer.emit('unsubscribe', uuid.value);
+    showMessage(`Disconnected from the server`, "error");
+  } catch (error) {
+    showMessage(`Connection error: ${error}`, "error");
+  }
 });
 
 //post client
@@ -57,8 +68,7 @@ const sendRequestConnect = async () => {
     platform: "tiktok",
     clientId: uuid.value || "",
     mac: macAddress.value || "",
-    pcName: pcName.value || "",
-    tdsid: []
+    pcName: pcName.value || ""
   }
   await axios.post(`${API_URL}/client`, client, {
     headers: {
@@ -105,8 +115,30 @@ const connectClient = () => {
       connectLoading.value = false;
     });
 
-    socketServer.on('tiktok-like', (message: any) => {
-      console.log(message);
+    /**
+     * Chạy browser
+     */
+    socketServer.on('client-start', (data: any) => {
+      if (!data.message) {
+        return;
+      }
+
+      for (let i = 0; i < data.message.length; i++) {
+        (window as any).ipcRenderer.send('woker-start', data.message[i]);
+      }
+    });
+
+    /**
+     * Gọi stop browser
+     */
+    socketServer.on('client-stop', (data: any) => {
+      if (!data.message) {
+        return
+      }
+      for (let i = 0; i < data.message.length; i++) {
+        const clientBrowser = data.message[i];
+        (window as any).ipcRenderer.send('woker-stop', clientBrowser.profileName);
+      }
     });
   } catch (e) {
     connectLoading.value = false;
@@ -141,19 +173,44 @@ const pcName = computed(() => {
 
 // Lấy các thông tin của máy
 onMounted(() => {
-  window.ipcRenderer.receive('genuuid', (arg: any) => {
+  (window as any).ipcRenderer.receive('genuuid', (arg: any) => {
     tmpUuid.value = arg
     localStorage.setItem('uuid', arg);
   });
 
-  window.ipcRenderer.receive('pcinfo', (arg: any) => {
+  (window as any).ipcRenderer.receive('pcinfo', (arg: any) => {
     tmpMac.value = arg.macAddress
     localStorage.setItem('macAddress', arg.macAddress);
 
     tmpPcName.value = arg.pcName
     localStorage.setItem('pcName', arg.pcName);
   });
+
+  (window as any).ipcRenderer.receive('worker-logs', (arg: any) => {
+    logs.value.unshift({
+      time: `${new Date().toLocaleString()}`,
+      content: arg
+    });
+
+    if (logs.value.length > 1000) {
+      logs.value.pop();
+    }
+  });
+
+  (window as any).ipcRenderer.receive('download-drivers', (arg: any) => {
+    if (arg === 'success') {
+      connectDisabled.value = false;
+    }
+  });
 })
+
+const connectDisabled = ref(true);
+
+const handleUploadSucess = (response: any, file: any, fileList: any) => {
+  console.log(response, file, fileList);
+}
+
+const logs = ref([] as any[]);
 
 </script>
 
@@ -161,13 +218,29 @@ onMounted(() => {
   <div class="flex justify-center items-center h-screen bg-gray-100">
     <div class="text-center">
       <el-row :gutter="20">
-        <el-col :span="16">
+        <el-col :span="20">
           <el-input v-model="uuid" disabled placeholder="UUID" />
         </el-col>
-        <el-col :span="8">
-          <el-button type="primary" @click="connectClient" :loading="connectLoading">Connect</el-button>
+        <el-col :span="4" class="text-right">
+          <el-button type="primary" @click="connectClient" :loading="connectLoading"
+            :disable="connectDisabled">Connect</el-button>
         </el-col>
       </el-row>
+      <el-row :gutter="20">
+        <el-col>
+          <el-table class="mt-3" :data="logs" style="width: 900px;height: 500px;">
+            <el-table-column prop="time" label="Thời gian" width="180" />
+            <el-table-column prop="content" label="Nội dung" />
+          </el-table>
+        </el-col>
+      </el-row>
+      <!-- <el-row>
+        <el-upload ref="uploadRef" :auto-upload="false" :on-change="handleUploadSucess">
+          <template #trigger>
+            <el-button type="primary">Chọn file</el-button>
+          </template>
+</el-upload>
+</el-row> -->
     </div>
   </div>
 </template>

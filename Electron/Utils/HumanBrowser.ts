@@ -3,6 +3,8 @@ import puppeteer from 'puppeteer-extra'
 import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 import { drawBezierMovement, drawBezierMovementWithJitter, humanMouseMove } from './mouseUtils'
 import { MovementOptions } from './types'
+import path from 'path';
+import { app } from 'electron';
 
 puppeteer.use(StealthPlugin())
 
@@ -33,19 +35,23 @@ class HumanBrowser {
         this.puppeteerBrowser.use(StealthPlugin())
     }
 
-    async launch(options?: BrowserLaunchArgumentOptions) {
+    async launch(options?: BrowserLaunchArgumentOptions, browserDisconnectCallback?: () => void) {
+        const decenxDir = path.join(app.getPath('userData'), 'decenx-files');
+
         this.browser = await puppeteer.launch({
-            executablePath: __dirname + '/chrome/120/chrome.exe',
+            executablePath:  path.join(decenxDir, '/120/chrome.exe'),
             headless: false,
             defaultViewport: DEFAULT_VIEWPORT,
             ignoreHTTPSErrors: true,
             ignoreDefaultArgs: ['--enable-automation', '--disable-extensions', '--enable-blink-features=IdleDetection'],
             ...options,
-        })
+        });
+
+        // create a callback to handle the browser disconnect event
+        this.browser.on('disconnected', () => browserDisconnectCallback);
 
         this.page = await this.browser.newPage();
     }
-
     async navigate(url: string) {
         if (!this.page) {
             throw new Error('Page is not initialized. Call launch() first.')

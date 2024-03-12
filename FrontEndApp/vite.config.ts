@@ -13,7 +13,13 @@ export default defineConfig(({ mode }) => ({
     base: mode == 'development' ? '' : './',
     plugins: [
         vue(),
-        nodePolyfills(),
+        nodePolyfills({
+            globals: {
+                Buffer: 'dev', // can also be 'build', 'dev', or false
+                global: true,
+                process: true,
+            },
+        }),
         AutoImport({
             resolvers: [ElementPlusResolver()],
         }),

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen } from "electron";
+import { app, BrowserWindow, ipcMain, IpcMainEvent, screen } from "electron";
 import * as path from "path";
 import { isDev } from "./config";
 import { appConfig } from "./ElectronStore/Configuration";
@@ -7,7 +7,11 @@ import { v4 as uuidv4 } from 'uuid'
 import * as fs from 'fs'
 const os = require('os');
 import { useInfomationSystem } from './Utils/infomationSystem'
-import { Client } from "./types/client.type";
+import { Tiktok } from "./types/client.type";
+import { TdsWorker } from "./worker/tdsworker";
+import { IWorkerBrowser } from "./types/workerState.type";
+import { IClientBrowser } from "./types/clientbrowser.type";
+import { downloadAndExtract } from './Utils/downloadChrome'
 
 // Hàm tạo cửa sổ chính và trả về promise chứa cửa sổ
 async function createWindow(): Promise<BrowserWindow> {
@@ -23,14 +27,6 @@ async function createWindow(): Promise<BrowserWindow> {
     // Load URL cho cửa sổ chính
     await loadMainWindowURL(mainWindow);
 
-    // Đọc hoặc tạo UUID và gửi nó tới cửa sổ chính
-    const savedUuid = readOrCreateUUID();
-    console.log('UUID:', savedUuid);
-    mainWindow.webContents.send('genuuid', savedUuid);
-
-    // Gửi thông tin hệ thống tới cửa sổ chính
-    sendSystemInfoToWindow(mainWindow);
-
     // Trả về cửa sổ chính để có thể sử dụng ở ngoài
     return mainWindow;
 }
@@ -39,12 +35,12 @@ async function createWindow(): Promise<BrowserWindow> {
 function getBrowserWindowOptions(): Electron.BrowserWindowConstructorOptions {
     const appBounds = appConfig.get("setting.appBounds");
     const defaultOptions: Electron.BrowserWindowConstructorOptions = {
-        width: 1920,
-        height: 1080,
+        width: 1024,
+        height: 768,
         minWidth: 400,
         minHeight: 300,
-        maxWidth: 800,
-        maxHeight: 600,
+        maxWidth: 1920,
+        maxHeight: 1080,
         webPreferences: {
             preload: path.join(__dirname, "/preload.js"),
             devTools: isDev,
@@ -53,7 +49,7 @@ function getBrowserWindowOptions(): Electron.BrowserWindowConstructorOptions {
         alwaysOnTop: true,
         frame: true,
         center: true,
-        autoHideMenuBar: true,
+        autoHideMenuBar: true
     };
 
     // Nếu có tùy chọn từ cấu hình, gộp chúng vào tùy chọn mặc định
@@ -146,9 +142,56 @@ app.whenReady().then(async () => {
     // Tạo cửa sổ chính và lưu trữ nó để có thể sử dụng ở sau này
     const mainWindow = await createWindow();
 
+    const url = 'https://cdn.decenx.io/files/120.zip';
+    //download chrome
+    downloadAndExtract(url).then((res) => {
+        mainWindow.webContents.send('worker-logs', 'Tải chrome về máy thành công', '');
+        mainWindow.webContents.send('download-drivers', 'success');
+    }).catch((err) => {
+        mainWindow.webContents.send('worker-logs', 'Tải chrome về máy thất bại', '');
+        mainWindow.webContents.send('download-drivers', 'failed');
+    });
+
+    // Đọc hoặc tạo UUID và gửi nó tới cửa sổ chính
+    const savedUuid = readOrCreateUUID();
+    // console.log('UUID:', savedUuid);
+    mainWindow.webContents.send('genuuid', savedUuid);
+    
+    // Gửi thông tin hệ thống tới cửa sổ chính
+    sendSystemInfoToWindow(mainWindow);
     // Sự kiện khi có yêu cầu chạy Browser (hoặc các sự kiện khác)
-    ipcMain.on('runBrowser', async (event, client: Client) => {
-        // Bạn có thể sử dụng mainWindow ở đây hoặc truyền nó vào các hàm khác cần nó.
+    const workerBrowser: IWorkerBrowser = {};
+    ipcMain.on('woker-start', async (event: IpcMainEvent, clientbrowser: IClientBrowser) => {
+        if (!clientbrowser) {
+            mainWindow.webContents.send('worker-logs', 'Không có thông tin browser', '');
+            return;
+        }
+        if (workerBrowser[clientbrowser.profileName]) {
+            mainWindow.webContents.send('worker-logs', `${clientbrowser.profileName} đang chạy`, clientbrowser.profileName);
+            return;
+        }
+        const worker = new TdsWorker({ maincontent: mainWindow, profileName: clientbrowser.profileName});
+        workerBrowser[clientbrowser.profileName] = worker;
+        worker.start(clientbrowser, () => {
+            console.log('browser disconnected');
+            if (workerBrowser[clientbrowser.profileName]) {
+                delete workerBrowser[clientbrowser.profileName];
+            }
+        });
+    });
+
+    //stop worker
+    ipcMain.on('woker-stop', async (event, name: string) => {
+        if (!name) {
+            mainWindow.webContents.send('worker-logs', 'Không có thông tin browser', '');
+            return;
+        }
+        if (!workerBrowser[name]) {
+            mainWindow.webContents.send('worker-logs', `${name} không chạy`, name);
+            return;
+        };
+        workerBrowser[name].stop();
+        delete workerBrowser[name];
     });
 
     // Sự kiện khi kích hoạt ứng dụng (chẳng hạn khi click vào biểu tượng trên Dock)

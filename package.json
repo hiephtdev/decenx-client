@@ -1,7 +1,7 @@
 {
-  "name": "xti-client",
+  "name": "decenx-client",
   "version": "1.0.0",
-  "description": "XTi Automation Client",
+  "description": "Decenx Automation Client",
   "main": "./dist/main.js",
   "license": "MIT",
   "author": "hiepht.eth",
@@ -17,7 +17,7 @@
     "build:front": "cd FrontEndApp && yarn build",
     "electron:build": "yarn build",
     "electron:builder": "electron-builder",
-    "app:build": "yarn prod:rename && yarn build:front && yarn electron:build && yarn electron:builder",
+    "app:build": "yarn build:front && yarn electron:build && yarn electron:builder",
     "app:build:nightly": "set APP_IS_NIGHTLY=yes && set APP_IS_DEV=no && yarn nightly:rename && yarn build:front && yarn electron:build && yarn electron:builder",
     "nightly:rename": "json -I -f package.json -e \"this.name='electron-vue'\" && json -I -f package.json -e \"this.build.productName='Electron Vue Nightly'\" && json -I -f package.json -e \"this.build.appId='com.official-electron-vue.app'\"",
     "prod:rename": "json -I -f package.json -e \"this.name='electron-vue'\" && json -I -f package.json -e \"this.build.productName='Electron Vue'\" && json -I -f package.json -e \"this.build.appId='com.official-electron-vue.app'\"",
@@ -27,6 +27,7 @@
     "up:win": "up_using_window.cmd"
   },
   "devDependencies": {
+    "@types/unzipper": "^0.10.9",
     "@types/uuid": "^9.0.8",
     "concurrently": "^8.2.2",
     "electron": "^29.1.0",
@@ -34,34 +35,35 @@
     "electron-devtools-installer": "^3.2.0",
     "json": "^11.0.0",
     "nodemon": "^3.1.0",
-    "puppeteer": "^22.3.0",
-    "puppeteer-extra": "^3.3.6",
     "typescript": "^5.3.3",
     "wait-on": "^7.2.0"
   },
   "dependencies": {
+    "axios": "^1.6.7",
     "electron-log": "^5.1.1",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.8",
+    "puppeteer": "^22.3.0",
+    "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "socket.io-client": "^4.7.4",
     "systeminformation": "^5.22.0",
+    "unzipper": "^0.10.14",
     "uuid": "^9.0.1"
   },
   "build": {
-    "appId": "com.official-xti-automation.app",
-    "productName": "XTi Client",
+    "appId": "com.official-decenx-client.app",
+    "productName": "DecenX Client",
     "copyright": "Copyright © 2024 ${author}",
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "hiephtdev"
-      }
-    ],
     "nsis": {
       "oneClick": true,
       "allowToChangeInstallationDirectory": false,
       "deleteAppDataOnUninstall": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "hiephtdev",
+      "repo": "decenx-client"
     },
     "files": [
       "dist/**/*"

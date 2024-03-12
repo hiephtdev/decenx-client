@@ -26,7 +26,7 @@ const login = async () => {
 </script>
 <template>
     <div class="flex justify-center items-center h-screen bg-gray-100">
-        <div class="bg-white p-8 rounded-lg shadow-lg w-1/4">
+        <div class="bg-white p-8 rounded-lg shadow-lg w-1/3">
             <!-- <img src="../assets/logo.png" alt="logo" class="logo" /> -->
             <h1 class="text-2xl font-bold text-center mb-4">Login</h1>
             <form @submit.prevent="login">

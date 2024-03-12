@@ -88,14 +88,14 @@ async function loadMainWindowURL(mainWindow: BrowserWindow): Promise<void> {
 }
 
 // Hàm đọc hoặc tạo UUID và trả về giá trị UUID
-function readOrCreateUUID(): string {
+async function readOrCreateUUID(): Promise<string> {
     let savedUuid: string;
     try {
-        const data = fs.readFileSync('uuid.txt', 'utf8');
+        const data = await fs.readFileSync('uuid.txt', 'utf8');
         savedUuid = data.trim();
     } catch (err) {
         savedUuid = uuidv4();
-        fs.writeFileSync('uuid.txt', savedUuid);
+       await fs.writeFileSync('uuid.txt', savedUuid);
     }
     return savedUuid;
 }
@@ -153,7 +153,7 @@ app.whenReady().then(async () => {
     });
 
     // Đọc hoặc tạo UUID và gửi nó tới cửa sổ chính
-    const savedUuid = readOrCreateUUID();
+    const savedUuid = await readOrCreateUUID();
     // console.log('UUID:', savedUuid);
     mainWindow.webContents.send('genuuid', savedUuid);
     

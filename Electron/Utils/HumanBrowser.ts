@@ -36,17 +36,17 @@ class HumanBrowser {
     }
 
     async launch(options?: BrowserLaunchArgumentOptions, browserDisconnectCallback?: () => void) {
-        const decenxDir = path.join(app.getPath('userData'), 'decenx-files');
-
+        const executablePath = path.join(app.getPath('userData'), 'decenx-files','120', 'chrome.exe');
+        console.log(executablePath);
         this.browser = await puppeteer.launch({
-            executablePath:  path.join(decenxDir, '/120/chrome.exe'),
+            executablePath: executablePath,
             headless: false,
             defaultViewport: DEFAULT_VIEWPORT,
             ignoreHTTPSErrors: true,
             ignoreDefaultArgs: ['--enable-automation', '--disable-extensions', '--enable-blink-features=IdleDetection'],
             ...options,
         });
-
+        console.log('browser running');
         // create a callback to handle the browser disconnect event
         this.browser.on('disconnected', () => browserDisconnectCallback);
 

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import unzipper from 'unzipper';
+import extract from 'extract-zip';
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
@@ -34,14 +34,7 @@ export async function downloadAndExtract(url: string): Promise<string> {
             const writeStream = fs.createWriteStream(tempZipFilePath);
             response.data.pipe(writeStream);
             writeStream.on('finish', () => {
-                fs.createReadStream(tempZipFilePath)
-                    .pipe(unzipper.Extract({ path: decenxDir }))
-                    .on('finish', () => {
-                        resolve(decenxDir); // Trả về đường dẫn thư mục temp chứa các tệp giải nén
-                    })
-                    .on('error', (err: any) => {
-                        reject(err);
-                    });
+                extract(tempZipFilePath, { dir: decenxDir }).then(() => { resolve(decenxDir); }).catch(reject);
             });
             writeStream.on('error', (err) => {
                 reject(err);

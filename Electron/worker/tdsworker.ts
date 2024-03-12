@@ -5,6 +5,7 @@ import * as path from "path";
 import { IWorker } from '../types/worker.type';
 import Logger from '../Utils/logger';
 import { IClientBrowser } from '../types/clientbrowser.type';
+import { app } from 'electron';
 
 interface TdsWorkerArgs {
     browserArgs?: string[];
@@ -69,8 +70,9 @@ export class TdsWorker implements IWorker {
     private async performTiktokTask(type: "tiktok_like" | "tiktok_follow", task: any) {
         await this.browser.wait(2000, 5000);
         await this.browser?.navigate(task.link);
+        await this.browser.wait(3000, 8000);
         await this.performAction(type === 'tiktok_follow' ? 'data-e2e="follow-button"' : '[data-e2e="like-icon"]');
-        await this.browser.wait(9000, 19000);
+        await this.browser.wait(10000, 20000);
     }
 
     // Hàm thực hiện công việc chính
@@ -138,7 +140,7 @@ export class TdsWorker implements IWorker {
         try {
             await this.browser.launch({
                 headless: this.headMode,
-                userDataDir: path.join(__dirname, '/user-data-dir/', clientbrowser.profileName),
+                userDataDir: path.join(app.getPath('userData'), 'user-data-dir', clientbrowser.profileName),
                 args: this.browserArgs
             }, () => {
                 this.sendLogs(`[Worker] Browser disconnected`, clientbrowser.profileName);
